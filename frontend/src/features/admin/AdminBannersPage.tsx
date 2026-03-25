@@ -19,12 +19,11 @@ export function AdminBannersPage() {
     queryFn: () => apiFetch<BannerItem[]>('/banners')
   });
   const mutation = useMutation({
-    mutationFn: async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
+    mutationFn: async (formData: FormData) => {
       return apiFetch('/admin/banners', {
         method: 'POST',
         auth: true,
-        body: new FormData(event.currentTarget)
+        body: formData
       });
     },
     onSuccess: () => {
@@ -38,7 +37,13 @@ export function AdminBannersPage() {
 
   return (
     <section className="grid gap-6">
-      <form className="shell-card grid gap-4 p-6 md:grid-cols-2" onSubmit={(event) => mutation.mutate(event)}>
+      <form
+        className="shell-card grid gap-4 p-6 md:grid-cols-2"
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          mutation.mutate(new FormData(event.currentTarget));
+        }}
+      >
         <h2 className="section-title md:col-span-2">轮播管理</h2>
         <input className="field" name="title" placeholder="标题" required />
         <input className="field" name="subtitle" placeholder="副标题" required />

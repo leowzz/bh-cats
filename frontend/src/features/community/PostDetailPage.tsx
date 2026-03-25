@@ -32,10 +32,7 @@ export function PostDetailPage() {
   });
 
   const createComment = useMutation({
-    mutationFn: async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const content = new FormData(form).get('content');
+    mutationFn: async (content: FormDataEntryValue | null) => {
       return apiFetch(`/comments`, {
         method: 'POST',
         auth: true,
@@ -65,7 +62,14 @@ export function PostDetailPage() {
       </div>
 
       {role ? (
-        <form className="shell-card grid gap-4 p-6" onSubmit={(event) => createComment.mutate(event)}>
+        <form
+          className="shell-card grid gap-4 p-6"
+          onSubmit={(event: FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            createComment.mutate(formData.get('content'));
+          }}
+        >
           <h3 className="font-display text-3xl">发表评论</h3>
           <textarea className="field" name="content" placeholder="说点什么..." required rows={4} />
           {error ? <p className="text-sm text-brick-500">{error}</p> : null}

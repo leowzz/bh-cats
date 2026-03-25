@@ -17,15 +17,12 @@ export function LoginPage() {
   const { login } = useAuth();
   const [error, setError] = useState('');
   const mutation = useMutation({
-    mutationFn: async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const formData = new FormData(form);
+    mutationFn: async (payload: { email: FormDataEntryValue | null; password: FormDataEntryValue | null }) => {
       return apiFetch<LoginResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({
-          email: formData.get('email'),
-          password: formData.get('password')
+          email: payload.email,
+          password: payload.password
         })
       });
     },
@@ -42,7 +39,17 @@ export function LoginPage() {
     <section className="mx-auto w-full max-w-xl shell-card p-6 md:p-8">
       <p className="text-sm uppercase tracking-[0.4em] text-moss-700">Login</p>
       <h2 className="section-title mt-3">登录账号</h2>
-      <form className="mt-6 grid gap-4" onSubmit={(event) => mutation.mutate(event)}>
+      <form
+        className="mt-6 grid gap-4"
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          const formData = new FormData(event.currentTarget);
+          mutation.mutate({
+            email: formData.get('email'),
+            password: formData.get('password')
+          });
+        }}
+      >
         <input className="field" name="email" placeholder="邮箱" required type="email" />
         <input className="field" name="password" placeholder="密码" required type="password" />
         {error ? <p className="text-sm text-brick-500">{error}</p> : null}

@@ -8,15 +8,17 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const mutation = useMutation({
-    mutationFn: async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const formData = new FormData(event.currentTarget);
+    mutationFn: async (payload: {
+      nickname: FormDataEntryValue | null;
+      email: FormDataEntryValue | null;
+      password: FormDataEntryValue | null;
+    }) => {
       return apiFetch('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          nickname: formData.get('nickname'),
-          email: formData.get('email'),
-          password: formData.get('password')
+          nickname: payload.nickname,
+          email: payload.email,
+          password: payload.password
         })
       });
     },
@@ -30,7 +32,18 @@ export function RegisterPage() {
     <section className="mx-auto w-full max-w-xl shell-card p-6 md:p-8">
       <p className="text-sm uppercase tracking-[0.4em] text-moss-700">Register</p>
       <h2 className="section-title mt-3">注册账号</h2>
-      <form className="mt-6 grid gap-4" onSubmit={(event) => mutation.mutate(event)}>
+      <form
+        className="mt-6 grid gap-4"
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          const formData = new FormData(event.currentTarget);
+          mutation.mutate({
+            nickname: formData.get('nickname'),
+            email: formData.get('email'),
+            password: formData.get('password')
+          });
+        }}
+      >
         <input className="field" name="nickname" placeholder="昵称" required />
         <input className="field" name="email" placeholder="邮箱" required type="email" />
         <input className="field" name="password" placeholder="密码" required type="password" />

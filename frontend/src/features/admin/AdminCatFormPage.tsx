@@ -9,10 +9,7 @@ export function AdminCatFormPage() {
   const { id } = useParams();
   const [error, setError] = useState('');
   const mutation = useMutation({
-    mutationFn: async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const formData = new FormData(form);
+    mutationFn: async (formData: FormData) => {
       if (!formData.get('status')) {
         formData.set('status', 'visible');
       }
@@ -31,7 +28,13 @@ export function AdminCatFormPage() {
   return (
     <section className="shell-card p-6 md:p-8">
       <h2 className="section-title">{id ? '编辑猫档案' : '新增猫档案'}</h2>
-      <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={(event) => mutation.mutate(event)}>
+      <form
+        className="mt-6 grid gap-4 md:grid-cols-2"
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          mutation.mutate(new FormData(event.currentTarget));
+        }}
+      >
         <input className="field" name="name" placeholder="猫猫名称" required />
         <select className="field" defaultValue="east" name="campus">
           <option value="east">东校区</option>

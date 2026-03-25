@@ -33,10 +33,7 @@ export function CommunityPage() {
   });
 
   const createPost = useMutation({
-    mutationFn: async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const formData = new FormData(form);
+    mutationFn: async (formData: FormData) => {
       return apiFetch<PostItem>('/posts', { method: 'POST', auth: true, body: formData });
     },
     onSuccess: () => {
@@ -59,7 +56,13 @@ export function CommunityPage() {
       </div>
 
       {role ? (
-        <form className="shell-card grid gap-4 p-6" onSubmit={(event) => createPost.mutate(event)}>
+        <form
+          className="shell-card grid gap-4 p-6"
+          onSubmit={(event: FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            createPost.mutate(new FormData(event.currentTarget));
+          }}
+        >
           <h3 className="font-display text-3xl">发布新帖子</h3>
           <input className="field" name="title" placeholder="帖子标题" required />
           <textarea className="field" name="content" placeholder="想分享什么？" required rows={5} />
