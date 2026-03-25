@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.api.deps import DbSession, get_admin_user
+from app.api.upload_utils import normalize_uploads
 from app.schemas.cat import CatListResponse, CatResponse
 from app.services.cat_service import cat_service
 
@@ -23,6 +24,19 @@ def get_cat(cat_id: int, db: DbSession) -> CatResponse:
     return cat
 
 
+@admin_router.get('', response_model=CatListResponse, dependencies=[Depends(get_admin_user)])
+def list_admin_cats(db: DbSession) -> CatListResponse:
+    return cat_service.list_admin_cats(db)
+
+
+@admin_router.get('/{cat_id}', response_model=CatResponse, dependencies=[Depends(get_admin_user)])
+def get_admin_cat(cat_id: int, db: DbSession) -> CatResponse:
+    cat = cat_service.get_admin_cat(db, cat_id)
+    if not cat:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='猫猫不存在')
+    return cat
+
+
 @admin_router.post('', response_model=CatResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(get_admin_user)])
 def create_cat(
     db: DbSession,
@@ -34,7 +48,7 @@ def create_cat(
     location: Annotated[str, Form()],
     personality_tags: Annotated[str, Form()],
     description: Annotated[str, Form()],
-    files: Annotated[list[UploadFile], File()] = [],
+    files: Annotated[UploadFile | list[UploadFile] | None, File()] = None,
 ) -> CatResponse:
     return cat_service.create_cat(
         db,
@@ -46,7 +60,7 @@ def create_cat(
         location=location,
         personality_tags=personality_tags,
         description=description,
-        files=files,
+        files=normalize_uploads(files),
     )
 
 
@@ -63,7 +77,7 @@ def update_cat(
     personality_tags: Annotated[str, Form()],
     description: Annotated[str, Form()],
     status_value: Annotated[str, Form(alias='status')],
-    files: Annotated[list[UploadFile], File()] | None = None,
+    files: Annotated[UploadFile | list[UploadFile] | None, File()] = None,
 ) -> CatResponse:
     cat = cat_service.update_cat(
         db,
@@ -77,8 +91,15 @@ def update_cat(
         personality_tags=personality_tags,
         description=description,
         status=status_value,
-        files=files,
+        files=normalize_uploads(files),
     )
     if not cat:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='猫猫不存在')
     return cat
+
+
+@admin_router.delete('/{cat_id}', status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(get_admin_user)])
+def delete_cat(cat_id: int, db: DbSession) -> None:
+    deleted = cat_service.delete_cat(db, cat_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='猫猫不存在')

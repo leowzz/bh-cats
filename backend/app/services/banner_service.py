@@ -1,6 +1,6 @@
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
-import shutil
 
 from fastapi import UploadFile
 from sqlalchemy import select
@@ -23,6 +23,16 @@ class BannerService:
         ).all()
         return [self._to_response(item) for item in banners]
 
+    def list_admin_banners(self, db: Session) -> list[BannerResponse]:
+        banners = db.scalars(select(Banner).options(selectinload(Banner.images)).order_by(Banner.sort_order.asc(), Banner.id.desc())).all()
+        return [self._to_response(item) for item in banners]
+
+    def get_banner(self, db: Session, banner_id: int) -> BannerResponse | None:
+        banner = db.scalar(select(Banner).where(Banner.id == banner_id).options(selectinload(Banner.images)))
+        if not banner:
+            return None
+        return self._to_response(banner)
+
     def create_banner(
         self,
         db: Session,
@@ -42,6 +52,43 @@ class BannerService:
         db.refresh(banner)
         return self._to_response(banner)
 
+    def update_banner(
+        self,
+        db: Session,
+        banner_id: int,
+        *,
+        title: str,
+        subtitle: str,
+        link_url: str,
+        sort_order: int,
+        is_active: bool,
+        files: Sequence[UploadFile] | None = None,
+    ) -> BannerResponse | None:
+        banner = db.scalar(select(Banner).where(Banner.id == banner_id).options(selectinload(Banner.images)))
+        if not banner:
+            return None
+        banner.title = title
+        banner.subtitle = subtitle
+        banner.link_url = link_url
+        banner.sort_order = sort_order
+        banner.is_active = is_active
+        db.commit()
+        if files:
+            self._replace_files(db, banner, files)
+        db.refresh(banner)
+        return self._to_response(banner)
+
+    def delete_banner(self, db: Session, banner_id: int) -> bool:
+        banner = db.scalar(select(Banner).where(Banner.id == banner_id).options(selectinload(Banner.images)))
+        if not banner:
+            return False
+        banner_dir = Path(get_settings().media_root) / 'banners' / str(banner.id)
+        if banner_dir.exists():
+            shutil.rmtree(banner_dir)
+        db.delete(banner)
+        db.commit()
+        return True
+
     def _attach_files(self, db: Session, banner: Banner, files: Sequence[UploadFile]) -> None:
         for idx, upload in enumerate(files):
             saved = self.media_service.process_upload(upload.file.read(), owner_type='banners', owner_id=banner.id)
@@ -56,6 +103,15 @@ class BannerService:
                 )
             )
         db.commit()
+
+    def _replace_files(self, db: Session, banner: Banner, files: Sequence[UploadFile]) -> None:
+        banner_dir = Path(get_settings().media_root) / 'banners' / str(banner.id)
+        if banner_dir.exists():
+            shutil.rmtree(banner_dir)
+        for image in list(banner.images):
+            db.delete(image)
+        db.commit()
+        self._attach_files(db, banner, files)
 
     def _to_response(self, banner: Banner) -> BannerResponse:
         return BannerResponse(

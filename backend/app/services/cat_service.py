@@ -1,15 +1,15 @@
 import json
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
-import shutil
 
 from fastapi import UploadFile
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.models.cat import Cat, CatImage
-from app.schemas.cat import CatImageResponse, CatResponse, CatListResponse
+from app.schemas.cat import CatImageResponse, CatListResponse, CatResponse
 from app.services.media_service import MediaService
 
 
@@ -32,6 +32,10 @@ class CatService:
         cats = list(db.scalars(query).unique())
         return CatListResponse(items=[self._to_response(cat) for cat in cats], total=len(cats))
 
+    def list_admin_cats(self, db: Session) -> CatListResponse:
+        cats = list(db.scalars(select(Cat).options(selectinload(Cat.images)).order_by(Cat.created_at.desc())).unique())
+        return CatListResponse(items=[self._to_response(cat) for cat in cats], total=len(cats))
+
     def get_public_cat(self, db: Session, cat_id: int) -> CatResponse | None:
         cat = db.scalar(select(Cat).where(Cat.id == cat_id, Cat.status == 'visible').options(selectinload(Cat.images)))
         if not cat:
@@ -39,6 +43,12 @@ class CatService:
         cat.view_count += 1
         db.commit()
         db.refresh(cat)
+        return self._to_response(cat)
+
+    def get_admin_cat(self, db: Session, cat_id: int) -> CatResponse | None:
+        cat = db.scalar(select(Cat).where(Cat.id == cat_id).options(selectinload(Cat.images)))
+        if not cat:
+            return None
         return self._to_response(cat)
 
     def create_cat(
@@ -106,6 +116,17 @@ class CatService:
             self._replace_files(db, cat, files)
         db.refresh(cat)
         return self._to_response(cat)
+
+    def delete_cat(self, db: Session, cat_id: int) -> bool:
+        cat = db.scalar(select(Cat).where(Cat.id == cat_id).options(selectinload(Cat.images)))
+        if not cat:
+            return False
+        cat_dir = Path(get_settings().media_root) / 'cats' / str(cat.id)
+        if cat_dir.exists():
+            shutil.rmtree(cat_dir)
+        db.delete(cat)
+        db.commit()
+        return True
 
     def _attach_files(self, db: Session, cat: Cat, files: Sequence[UploadFile]) -> None:
         for idx, upload in enumerate(files):

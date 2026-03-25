@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.api.deps import DbSession, get_current_user
+from app.api.upload_utils import normalize_uploads
 from app.schemas.post import PostListResponse, PostResponse
 from app.services.post_service import post_service
 
@@ -29,9 +30,16 @@ def create_post(
     title: Annotated[str, Form()] = '',
     content: Annotated[str, Form()] = '',
     related_cat_id: Annotated[int | None, Form()] = None,
-    files: Annotated[list[UploadFile], File()] = [],
+    files: Annotated[UploadFile | list[UploadFile] | None, File()] = None,
 ) -> PostResponse:
-    return post_service.create_post(db, current_user, title=title, content=content, related_cat_id=related_cat_id, files=files)
+    return post_service.create_post(
+        db,
+        current_user,
+        title=title,
+        content=content,
+        related_cat_id=related_cat_id,
+        files=normalize_uploads(files),
+    )
 
 
 @router.put('/{post_id}', response_model=PostResponse)
@@ -42,10 +50,18 @@ def update_post(
     title: Annotated[str, Form()] = '',
     content: Annotated[str, Form()] = '',
     related_cat_id: Annotated[int | None, Form()] = None,
-    files: Annotated[list[UploadFile], File()] | None = None,
+    files: Annotated[UploadFile | list[UploadFile] | None, File()] = None,
 ) -> PostResponse:
     try:
-        post = post_service.update_post(db, post_id, current_user, title=title, content=content, related_cat_id=related_cat_id, files=files)
+        post = post_service.update_post(
+            db,
+            post_id,
+            current_user,
+            title=title,
+            content=content,
+            related_cat_id=related_cat_id,
+            files=normalize_uploads(files),
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if not post:

@@ -29,8 +29,9 @@ export function AdminDashboardPage() {
         <h2 className="section-title mt-3">管理仪表盘</h2>
         <p className="mt-3 text-sm leading-7 text-ink-700">查看猫档案、帖子和轮播的整体情况，并进入管理页面。</p>
         <div className="mt-6 flex flex-wrap gap-3">
+          <Link className="ghost-btn" to="/admin/cats">猫档案列表</Link>
           <Link className="action-btn" to="/admin/cats/new">新增猫档案</Link>
-          <Link className="ghost-btn" to="/admin/banners">管理轮播</Link>
+          <Link className="ghost-btn" to="/admin/banners">轮播管理</Link>
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
