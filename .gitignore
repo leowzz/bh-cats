@@ -1,4 +1,5 @@
 .venv/
+.env
 backend/.pytest_cache/
 backend/storage/app.db
 backend/storage/uploads/
