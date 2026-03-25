@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: bh-cats-backend
+    environment:
+      SECRET_KEY: change-me-in-production
+      SQLITE_PATH: storage/app.db
+      MEDIA_ROOT: storage/uploads
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: Admin123!
+      ADMIN_NICKNAME: 系统管理员
+    volumes:
+      - ./backend/storage:/app/storage
+    ports:
+      - '8000:8000'
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: bh-cats-frontend
+    depends_on:
+      - backend
+    ports:
+      - '3000:80'

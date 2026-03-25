@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #1f2722;
+  background: #f8f4ea;
+  font-family: 'Noto Serif SC', Georgia, serif;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(217, 128, 51, 0.18), transparent 25%),
+    linear-gradient(180deg, #f8f4ea 0%, #f3ecd9 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer components {
+  .shell-card {
+    @apply rounded-[28px] border border-white/60 bg-white/70 shadow-card backdrop-blur;
+  }
+
+  .section-title {
+    @apply font-display text-3xl text-ink-900 md:text-4xl;
+  }
+
+  .action-btn {
+    @apply inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-moss-700;
+  }
+
+  .ghost-btn {
+    @apply inline-flex items-center justify-center rounded-full border border-ink-900/10 px-5 py-3 text-sm font-semibold text-ink-900 transition hover:border-moss-500 hover:text-moss-700;
+  }
+
+  .field {
+    @apply w-full rounded-2xl border border-ink-900/10 bg-white/90 px-4 py-3 text-sm text-ink-900 outline-none transition focus:border-moss-500 focus:ring-2 focus:ring-moss-400/20;
+  }
+}
