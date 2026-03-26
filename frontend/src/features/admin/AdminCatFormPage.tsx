@@ -74,12 +74,33 @@ function parseTags(value: string): string[] {
     .filter((item) => item.length > 0);
 }
 
+function buildCatPayload(form: CatFormState, options: { coverImageId?: number | null; removeImageIds?: number[]; files?: File[] } = {}) {
+  const payload = new FormData();
+  payload.set('name', form.name.trim());
+  payload.set('campus', form.campus);
+  payload.set('breed', form.breed.trim());
+  payload.set('gender', form.gender);
+  payload.set('sterilized', form.sterilized);
+  payload.set('location', form.location.trim());
+  payload.set('personality_tags', JSON.stringify(parseTags(form.personality_tags)));
+  payload.set('description', form.description.trim());
+  payload.set('status', form.status);
+  payload.set('remove_image_ids', JSON.stringify(options.removeImageIds ?? []));
+  if (options.coverImageId != null) {
+    payload.set('cover_image_id', String(options.coverImageId));
+  }
+  (options.files ?? []).forEach((file) => payload.append('files', file));
+  return payload;
+}
+
 export function AdminCatFormPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { id } = useParams();
   const isEditing = typeof id === 'string';
   const [form, setForm] = useState<CatFormState>(createEmptyForm());
+  const [serverForm, setServerForm] = useState<CatFormState>(createEmptyForm());
+  const [currentImages, setCurrentImages] = useState<CatImage[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [removeImageIds, setRemoveImageIds] = useState<number[]>([]);
   const [coverImageId, setCoverImageId] = useState<number | null>(null);
@@ -100,7 +121,10 @@ export function AdminCatFormPage() {
 
   useEffect(() => {
     if (catQuery.data) {
-      setForm(mapCatToForm(catQuery.data));
+      const nextForm = mapCatToForm(catQuery.data);
+      setForm(nextForm);
+      setServerForm(nextForm);
+      setCurrentImages(catQuery.data.images);
       setSelectedFiles([]);
       setRemoveImageIds([]);
       setCoverImageId(catQuery.data.images.find((image) => image.is_cover)?.id ?? catQuery.data.images[0]?.id ?? null);
@@ -126,6 +150,59 @@ export function AdminCatFormPage() {
     },
     onError: (mutationError) => {
       setError(mutationError instanceof Error ? mutationError.message : '保存失败');
+    }
+  });
+
+  const uploadImagesMutation = useMutation({
+    mutationFn: (files: File[]) => {
+      if (!isEditing || typeof id !== 'string') {
+        throw new Error('当前页面不支持即时上传');
+      }
+      return apiFetch<CatDetail>('/admin/cats/' + id, {
+        method: 'PUT',
+        auth: true,
+        body: buildCatPayload(serverForm, {
+          coverImageId,
+          files
+        })
+      });
+    },
+    onSuccess: (cat) => {
+      setServerForm(mapCatToForm(cat));
+      setCurrentImages(cat.images);
+      setCoverImageId(cat.images.find((image) => image.is_cover)?.id ?? cat.images[0]?.id ?? null);
+      setSelectedFiles([]);
+      setRemoveImageIds([]);
+      setPickerKey((value) => value + 1);
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : '上传失败');
+    }
+  });
+
+  const deleteImagesMutation = useMutation({
+    mutationFn: (imageIds: number[]) => {
+      if (!isEditing || typeof id !== 'string') {
+        throw new Error('当前页面不支持即时删除');
+      }
+      return apiFetch<CatDetail>('/admin/cats/' + id, {
+        method: 'PUT',
+        auth: true,
+        body: buildCatPayload(serverForm, {
+          coverImageId,
+          removeImageIds: imageIds
+        })
+      });
+    },
+    onSuccess: (cat) => {
+      setServerForm(mapCatToForm(cat));
+      setCurrentImages(cat.images);
+      setCoverImageId(cat.images.find((image) => image.is_cover)?.id ?? cat.images[0]?.id ?? null);
+      setRemoveImageIds([]);
+      setPreviewIndex(null);
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : '删除失败');
     }
   });
 
@@ -164,28 +241,27 @@ export function AdminCatFormPage() {
       return;
     }
 
-    const payload = new FormData();
-    payload.set('name', name);
-    payload.set('campus', form.campus);
-    payload.set('breed', form.breed.trim());
-    payload.set('gender', form.gender);
-    payload.set('sterilized', form.sterilized);
-    payload.set('location', location);
-    payload.set('personality_tags', JSON.stringify(parseTags(form.personality_tags)));
-    payload.set('description', description);
-    payload.set('status', form.status);
-    if (isEditing) {
-      payload.set('remove_image_ids', JSON.stringify(removeImageIds));
-      if (coverImageId != null) {
-        payload.set('cover_image_id', String(coverImageId));
-      }
-    }
-    selectedFiles.forEach((file) => payload.append('files', file));
-    mutation.mutate(payload);
+    mutation.mutate(
+      buildCatPayload(
+        {
+          ...form,
+          name,
+          location,
+          description
+        },
+        isEditing
+          ? {
+              coverImageId,
+              removeImageIds,
+              files: selectedFiles
+            }
+          : {
+              files: selectedFiles
+            }
+      )
+    );
   }
-
-  const currentImages = catQuery.data?.images ?? [];
-  const fileHint = currentImages.length > 0 ? '将新增到现有图片，当前共 ' + currentImages.length + ' 张' : '未选择图片';
+  const uploadSelectionLabel = '当前已选择 ' + selectedFiles.length + ' 张待上传';
 
   if (isEditing && catQuery.isLoading && catQuery.data == null) {
     return <section className="shell-card p-6 md:p-8">正在加载档案...</section>;
@@ -234,17 +310,44 @@ export function AdminCatFormPage() {
         </select>
         <ImagePickerField
           className="md:col-span-2"
-          emptyLabel={fileHint}
+          emptyLabel={uploadSelectionLabel}
           id="cat-files"
           name="files"
           onChange={setSelectedFiles}
           resetKey={pickerKey}
           selectedFiles={selectedFiles}
         />
+        {isEditing ? (
+          <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+            <p className="text-sm text-ink-700">将新增到现有图片，当前共 {currentImages.length} 张</p>
+            {selectedFiles.length > 0 ? (
+              <button
+                className="ghost-btn"
+                disabled={uploadImagesMutation.isPending}
+                onClick={() => uploadImagesMutation.mutate(selectedFiles)}
+                type="button"
+              >
+                {uploadImagesMutation.isPending ? '上传中...' : '立即上传图片'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {currentImages.length > 0 ? (
           <div className="md:col-span-2 grid gap-3">
             <p className="text-sm text-ink-700">当前图片管理：可勾选移除、设置封面，点击缩略图查看大图。</p>
+            {removeImageIds.length > 0 ? (
+              <div>
+                <button
+                  className="ghost-btn border-brick-200 text-brick-500 hover:border-brick-400 hover:text-brick-600"
+                  disabled={deleteImagesMutation.isPending}
+                  onClick={() => deleteImagesMutation.mutate(removeImageIds)}
+                  type="button"
+                >
+                  {deleteImagesMutation.isPending ? '删除中...' : '删除所选图片'}
+                </button>
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {currentImages.map((image, index) => (
                 <div

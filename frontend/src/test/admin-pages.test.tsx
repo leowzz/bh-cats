@@ -217,7 +217,7 @@ describe('Admin pages', () => {
     expect(await screen.findByText('猫档案管理')).toBeInTheDocument();
   });
 
-  it('supports admin image preview, cover selection, and multi-remove when editing cats', async () => {
+  it('uploads cat images immediately in the edit page', async () => {
     const user = userEvent.setup();
     const currentCat = {
       id: 1,
@@ -240,7 +240,7 @@ describe('Admin pages', () => {
         { id: 13, file_path: 'cats/1/side.webp', thumb_path: 'cats/1/side_thumb.webp', is_cover: false }
       ]
     };
-    let putCalls = 0;
+    let uploadCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = (init?.method ?? 'GET').toUpperCase();
@@ -250,16 +250,87 @@ describe('Admin pages', () => {
       }
 
       if (url.endsWith('/api/admin/cats/1') && method === 'PUT') {
-        putCalls += 1;
+        uploadCalls += 1;
         const body = init?.body as FormData;
-        expect(body.get('remove_image_ids')).toBe('[11,13]');
-        expect(body.get('cover_image_id')).toBe('12');
         expect(body.getAll('files')).toHaveLength(1);
         return mockResponse({
           ...currentCat,
           images: [
-            { id: 12, file_path: 'cats/1/detail.webp', thumb_path: 'cats/1/detail_thumb.webp', is_cover: true },
+            ...currentCat.images,
             { id: 21, file_path: 'cats/1/new.webp', thumb_path: 'cats/1/new_thumb.webp', is_cover: false }
+          ]
+        });
+      }
+
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AppProviders authInitialState={{ role: 'admin', token: 'admin-token' }}>
+        <MemoryRouter initialEntries={['/admin/cats/1/edit']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AppProviders>
+    );
+
+    expect(await screen.findByRole('button', { name: '查看奶油图片 3' })).toBeInTheDocument();
+
+    const file = new File(['new-image'], 'cat-new.png', { type: 'image/png' });
+    const fileInput = screen.getByLabelText('上传图片', { selector: 'input' });
+    await user.upload(fileInput, file);
+
+    await user.click(screen.getByRole('button', { name: '立即上传图片' }));
+
+    await waitFor(() => {
+      expect(uploadCalls).toBe(1);
+    });
+    expect(screen.getByRole('button', { name: '查看奶油图片 4' })).toBeInTheDocument();
+    expect(screen.getByText('将新增到现有图片，当前共 4 张')).toBeInTheDocument();
+    expect(screen.getByText('当前已选择 0 张待上传')).toBeInTheDocument();
+    expect(screen.queryByText('猫档案管理')).not.toBeInTheDocument();
+  });
+
+  it('shows delete button for selected images and removes them immediately', async () => {
+    const user = userEvent.setup();
+    const currentCat = {
+      id: 1,
+      name: '奶油',
+      campus: 'east',
+      breed: '中华田园猫',
+      gender: 'female',
+      sterilized: true,
+      location: '图书馆附近',
+      personality_tags: ['亲人', '贪吃'],
+      description: '喜欢晒太阳',
+      status: 'visible',
+      view_count: 1,
+      like_count: 2,
+      created_at: '2026-03-26T00:00:00Z',
+      updated_at: '2026-03-26T00:00:00Z',
+      images: [
+        { id: 11, file_path: 'cats/1/cover.webp', thumb_path: 'cats/1/cover_thumb.webp', is_cover: true },
+        { id: 12, file_path: 'cats/1/detail.webp', thumb_path: 'cats/1/detail_thumb.webp', is_cover: false },
+        { id: 13, file_path: 'cats/1/side.webp', thumb_path: 'cats/1/side_thumb.webp', is_cover: false }
+      ]
+    };
+    let deleteCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.endsWith('/api/admin/cats/1') && method === 'GET') {
+        return mockResponse(currentCat);
+      }
+
+      if (url.endsWith('/api/admin/cats/1') && method === 'PUT') {
+        deleteCalls += 1;
+        const body = init?.body as FormData;
+        expect(body.get('remove_image_ids')).toBe('[11,13]');
+        return mockResponse({
+          ...currentCat,
+          images: [
+            { id: 12, file_path: 'cats/1/detail.webp', thumb_path: 'cats/1/detail_thumb.webp', is_cover: true },
           ]
         });
       }
@@ -280,27 +351,20 @@ describe('Admin pages', () => {
       </AppProviders>
     );
 
-    const previewButton = await screen.findByRole('button', { name: '查看奶油图片 2' });
-    await user.click(previewButton);
-    expect(await screen.findByRole('dialog', { name: '奶油图片预览' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '关闭预览' }));
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '奶油图片预览' })).not.toBeInTheDocument();
-    });
+    expect(await screen.findByRole('button', { name: '查看奶油图片 3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除所选图片' })).not.toBeInTheDocument();
 
     await user.click(screen.getByLabelText('移除奶油图片 1'));
     await user.click(screen.getByLabelText('移除奶油图片 3'));
-    await user.click(screen.getByRole('button', { name: '设为奶油封面 2' }));
-
-    const file = new File(['new-image'], 'cat-new.png', { type: 'image/png' });
-    const fileInput = screen.getByLabelText('上传图片', { selector: 'input' });
-    await user.upload(fileInput, file);
-
-    await user.click(screen.getByRole('button', { name: '保存档案' }));
+    await user.click(screen.getByRole('button', { name: '删除所选图片' }));
 
     await waitFor(() => {
-      expect(putCalls).toBe(1);
+      expect(deleteCalls).toBe(1);
     });
+    expect(screen.queryByRole('button', { name: '查看奶油图片 3' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看奶油图片 2' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看奶油图片 1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除所选图片' })).not.toBeInTheDocument();
   });
 
   it('supports banner create, edit, and confirmed delete in admin page', async () => {
