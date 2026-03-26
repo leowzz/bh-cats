@@ -1,3 +1,4 @@
+import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -9,6 +10,18 @@ from app.services.cat_service import cat_service
 
 router = APIRouter(tags=['cats'])
 admin_router = APIRouter(prefix='/admin/cats', tags=['admin-cats'])
+
+
+def parse_image_id_list(raw_value: str | None) -> list[int]:
+    if not raw_value:
+        return []
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='remove_image_ids 格式错误') from exc
+    if not isinstance(value, list) or not all(isinstance(item, int) for item in value):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='remove_image_ids 必须是数字数组')
+    return value
 
 
 @router.get('/cats', response_model=CatListResponse)
@@ -77,6 +90,8 @@ def update_cat(
     personality_tags: Annotated[str, Form()],
     description: Annotated[str, Form()],
     status_value: Annotated[str, Form(alias='status')],
+    remove_image_ids: Annotated[str | None, Form()] = None,
+    cover_image_id: Annotated[int | None, Form()] = None,
     files: Annotated[UploadFile | list[UploadFile] | None, File()] = None,
 ) -> CatResponse:
     cat = cat_service.update_cat(
@@ -91,6 +106,8 @@ def update_cat(
         personality_tags=personality_tags,
         description=description,
         status=status_value,
+        remove_image_ids=parse_image_id_list(remove_image_ids),
+        cover_image_id=cover_image_id,
         files=normalize_uploads(files),
     )
     if not cat:

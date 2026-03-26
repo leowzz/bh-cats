@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, UTC
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.banner import Banner
 from app.models.cat import Cat
@@ -12,14 +12,31 @@ from app.models.post import Post
 
 class HomeService:
     def pick_today_best_cat(self, db: Session):
-        cats = db.scalars(select(Cat).where(Cat.status == 'visible')).all()
+        cats = db.scalars(select(Cat).where(Cat.status == 'visible', Cat.deleted_at.is_(None))).all()
         best: dict | None = None
         recent_cutoff = datetime.now(UTC) - timedelta(days=7)
         for cat in cats:
-            related_post_count = db.scalar(select(func.count(Post.id)).where(Post.related_cat_id == cat.id)) or 0
-            recent_post_count = db.scalar(select(func.count(Post.id)).where(Post.related_cat_id == cat.id, Post.created_at >= recent_cutoff)) or 0
+            related_post_count = db.scalar(
+                select(func.count(Post.id)).where(Post.related_cat_id == cat.id, Post.status == 'visible', Post.deleted_at.is_(None))
+            ) or 0
+            recent_post_count = db.scalar(
+                select(func.count(Post.id)).where(
+                    Post.related_cat_id == cat.id,
+                    Post.status == 'visible',
+                    Post.deleted_at.is_(None),
+                    Post.created_at >= recent_cutoff,
+                )
+            ) or 0
             recent_comment_count = db.scalar(
-                select(func.count(Comment.id)).join(Post, Comment.post_id == Post.id).where(Post.related_cat_id == cat.id, Comment.created_at >= recent_cutoff)
+                select(func.count(Comment.id))
+                .join(Post, Comment.post_id == Post.id)
+                .where(
+                    Post.related_cat_id == cat.id,
+                    Post.status == 'visible',
+                    Post.deleted_at.is_(None),
+                    Comment.deleted_at.is_(None),
+                    Comment.created_at >= recent_cutoff,
+                )
             ) or 0
             recent_like_count = db.scalar(
                 select(func.count(Like.id)).where(Like.target_type == 'cat', Like.target_id == cat.id, Like.created_at >= recent_cutoff)
@@ -34,13 +51,28 @@ class HomeService:
         return best
 
     def build_homepage(self, db: Session) -> dict:
-        total_cats = db.scalar(select(func.count(Cat.id)).where(Cat.status == 'visible')) or 0
+        total_cats = db.scalar(select(func.count(Cat.id)).where(Cat.status == 'visible', Cat.deleted_at.is_(None))) or 0
         recent_cutoff = datetime.now(UTC) - timedelta(days=1)
-        active_cat_ids = set(db.scalars(select(Post.related_cat_id).where(Post.related_cat_id.is_not(None), Post.created_at >= recent_cutoff)).all())
-        banners = db.scalars(select(Banner).where(Banner.is_active.is_(True)).order_by(Banner.sort_order.asc())).all()
+        active_cat_ids = set(
+            db.scalars(
+                select(Post.related_cat_id).where(
+                    Post.related_cat_id.is_not(None),
+                    Post.status == 'visible',
+                    Post.created_at >= recent_cutoff,
+                    Post.deleted_at.is_(None),
+                )
+            ).all()
+        )
+        banners = db.scalars(select(Banner).where(Banner.is_active.is_(True), Banner.deleted_at.is_(None)).order_by(Banner.sort_order.asc())).all()
         best = self.pick_today_best_cat(db)
-        latest_posts = db.scalars(select(Post).where(Post.status == 'visible').order_by(Post.created_at.desc()).limit(5)).all()
-        hot_cats = db.scalars(select(Cat).where(Cat.status == 'visible').order_by(Cat.like_count.desc(), Cat.view_count.desc()).limit(6)).all()
+        latest_posts = db.scalars(select(Post).where(Post.status == 'visible', Post.deleted_at.is_(None)).order_by(Post.created_at.desc()).limit(5)).all()
+        hot_cats = db.scalars(
+            select(Cat)
+            .where(Cat.status == 'visible', Cat.deleted_at.is_(None))
+            .options(selectinload(Cat.images))
+            .order_by(Cat.like_count.desc(), Cat.view_count.desc())
+            .limit(6)
+        ).all()
         return {
             'stats': {'total_cats': total_cats, 'active_cats_today': len(active_cat_ids)},
             'today_best': best,

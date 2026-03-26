@@ -9,7 +9,10 @@ def test_admin_can_create_banner_with_single_file_field(client, admin_headers, s
     assert response.json()['images'][0]['file_path'].endswith('.webp')
 
 
-def test_admin_banner_full_crud_and_public_order(client, admin_headers, sample_image_bytes) -> None:
+from app.models.banner import Banner
+
+
+def test_admin_banner_full_crud_and_public_order(client, admin_headers, sample_image_bytes, db_session) -> None:
     first = client.post(
         '/api/admin/banners',
         headers=admin_headers,
@@ -51,6 +54,15 @@ def test_admin_banner_full_crud_and_public_order(client, admin_headers, sample_i
 
     delete = client.delete(f'/api/admin/banners/{second_id}', headers=admin_headers)
     assert delete.status_code == 204
+
+    db_session.expire_all()
+    deleted_banner = db_session.get(Banner, second_id)
+    assert deleted_banner is not None
+    assert deleted_banner.deleted_at is not None
+
+    admin_list_after_delete = client.get('/api/admin/banners', headers=admin_headers)
+    assert admin_list_after_delete.status_code == 200
+    assert [item['id'] for item in admin_list_after_delete.json()] == [first_id]
 
     deleted_detail = client.get(f'/api/admin/banners/{second_id}', headers=admin_headers)
     assert deleted_detail.status_code == 404

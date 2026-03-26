@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.deps import DbSession
+from app.services.cat_service import cat_service
 from app.services.home_service import home_service
 
 router = APIRouter(prefix='/home', tags=['home'])
@@ -28,5 +29,14 @@ def get_home(db: DbSession) -> dict:
             {'id': post.id, 'title': post.title, 'created_at': post.created_at.isoformat() if post.created_at else None}
             for post in payload['latest_posts']
         ],
-        'hot_cats': [{'id': cat.id, 'name': cat.name, 'like_count': cat.like_count, 'view_count': cat.view_count} for cat in payload['hot_cats']],
+        'hot_cats': [
+            {
+                'id': cat.id,
+                'name': cat.name,
+                'like_count': cat.like_count,
+                'view_count': cat.view_count,
+                'images': cat_service.serialize_images(cat.images),
+            }
+            for cat in payload['hot_cats']
+        ],
     }

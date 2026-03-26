@@ -1,4 +1,6 @@
+from app.models.comment import Comment
 from app.models.cat import Cat
+from app.models.post import Post
 
 
 def test_create_post_accepts_single_file_field(client, db_session, user_headers, sample_image_bytes) -> None:
@@ -61,3 +63,30 @@ def test_post_comment_and_owner_permissions(client, db_session, user_headers, ot
 
     delete_comment = client.delete(f'/api/comments/{comment_id}', headers=user_headers)
     assert delete_comment.status_code == 204
+
+    db_session.expire_all()
+    deleted_comment = db_session.get(Comment, comment_id)
+    assert deleted_comment is not None
+    assert deleted_comment.deleted_at is not None
+    deleted_reply = db_session.query(Comment).filter(Comment.parent_id == comment_id).one()
+    assert deleted_reply.deleted_at is not None
+
+    detail_after_comment_delete = client.get(f'/api/posts/{post_id}')
+    assert detail_after_comment_delete.status_code == 200
+    assert detail_after_comment_delete.json()['comment_count'] == 0
+    assert detail_after_comment_delete.json()['comments'] == []
+
+    delete_post = client.delete(f'/api/posts/{post_id}', headers=user_headers)
+    assert delete_post.status_code == 204
+
+    db_session.expire_all()
+    deleted_post = db_session.get(Post, post_id)
+    assert deleted_post is not None
+    assert deleted_post.deleted_at is not None
+
+    hidden_detail = client.get(f'/api/posts/{post_id}')
+    assert hidden_detail.status_code == 404
+
+    hidden_list = client.get('/api/posts')
+    assert hidden_list.status_code == 200
+    assert hidden_list.json()['items'] == []

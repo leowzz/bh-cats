@@ -3,11 +3,14 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { apiFetch, mediaUrl } from '../../lib/api';
+import { CatImageLightbox } from '../cats/CatImageLightbox';
 import { ImagePickerField } from './ImagePickerField';
 
 type CatImage = {
+  id: number;
   file_path: string;
   thumb_path: string;
+  is_cover: boolean;
 };
 
 type CatDetail = {
@@ -78,6 +81,9 @@ export function AdminCatFormPage() {
   const isEditing = typeof id === 'string';
   const [form, setForm] = useState<CatFormState>(createEmptyForm());
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [removeImageIds, setRemoveImageIds] = useState<number[]>([]);
+  const [coverImageId, setCoverImageId] = useState<number | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [pickerKey, setPickerKey] = useState(0);
   const [error, setError] = useState('');
 
@@ -96,6 +102,9 @@ export function AdminCatFormPage() {
     if (catQuery.data) {
       setForm(mapCatToForm(catQuery.data));
       setSelectedFiles([]);
+      setRemoveImageIds([]);
+      setCoverImageId(catQuery.data.images.find((image) => image.is_cover)?.id ?? catQuery.data.images[0]?.id ?? null);
+      setPreviewIndex(null);
       setPickerKey((value) => value + 1);
       setError('');
       return;
@@ -122,6 +131,17 @@ export function AdminCatFormPage() {
 
   function updateField<Key extends keyof CatFormState>(key: Key, value: CatFormState[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleRemoveImage(imageId: number) {
+    setRemoveImageIds((current) => {
+      const next = current.includes(imageId) ? current.filter((value) => value !== imageId) : [...current, imageId];
+      const remainingImageIds = currentImages.filter((image) => !next.includes(image.id)).map((image) => image.id);
+      if (coverImageId != null && !remainingImageIds.includes(coverImageId)) {
+        setCoverImageId(remainingImageIds[0] ?? null);
+      }
+      return next;
+    });
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -154,12 +174,18 @@ export function AdminCatFormPage() {
     payload.set('personality_tags', JSON.stringify(parseTags(form.personality_tags)));
     payload.set('description', description);
     payload.set('status', form.status);
+    if (isEditing) {
+      payload.set('remove_image_ids', JSON.stringify(removeImageIds));
+      if (coverImageId != null) {
+        payload.set('cover_image_id', String(coverImageId));
+      }
+    }
     selectedFiles.forEach((file) => payload.append('files', file));
     mutation.mutate(payload);
   }
 
   const currentImages = catQuery.data?.images ?? [];
-  const fileHint = currentImages.length > 0 ? '当前已上传 ' + currentImages.length + ' 张图片' : '未选择图片';
+  const fileHint = currentImages.length > 0 ? '将新增到现有图片，当前共 ' + currentImages.length + ' 张' : '未选择图片';
 
   if (isEditing && catQuery.isLoading && catQuery.data == null) {
     return <section className="shell-card p-6 md:p-8">正在加载档案...</section>;
@@ -218,15 +244,47 @@ export function AdminCatFormPage() {
 
         {currentImages.length > 0 ? (
           <div className="md:col-span-2 grid gap-3">
-            <p className="text-sm text-ink-700">当前图片预览，重新上传会替换整组图片：</p>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <p className="text-sm text-ink-700">当前图片管理：可勾选移除、设置封面，点击缩略图查看大图。</p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {currentImages.map((image, index) => (
-                <img
-                  key={image.file_path + String(index)}
-                  alt={form.name || '猫猫图片'}
-                  className="h-24 w-full rounded-2xl object-cover"
-                  src={mediaUrl(image.thumb_path || image.file_path)}
-                />
+                <div
+                  key={image.id}
+                  className="rounded-[24px] border border-ink-900/10 p-3"
+                  data-removed={removeImageIds.includes(image.id) ? 'true' : 'false'}
+                >
+                  <button
+                    aria-label={`查看${form.name || '猫猫'}图片 ${index + 1}`}
+                    className="block w-full overflow-hidden rounded-2xl"
+                    onClick={() => setPreviewIndex(index)}
+                    type="button"
+                  >
+                    <img
+                      alt={form.name || '猫猫图片'}
+                      className="h-28 w-full object-cover"
+                      src={mediaUrl(image.thumb_path || image.file_path)}
+                    />
+                  </button>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm text-ink-700">
+                      <input
+                        aria-label={`移除${form.name || '猫猫'}图片 ${index + 1}`}
+                        checked={removeImageIds.includes(image.id)}
+                        onChange={() => toggleRemoveImage(image.id)}
+                        type="checkbox"
+                      />
+                      移除
+                    </label>
+                    <button
+                      aria-label={`设为${form.name || '猫猫'}封面 ${index + 1}`}
+                      className={coverImageId === image.id ? 'action-btn px-3 py-2 text-sm' : 'ghost-btn px-3 py-2 text-sm'}
+                      disabled={removeImageIds.includes(image.id)}
+                      onClick={() => setCoverImageId(image.id)}
+                      type="button"
+                    >
+                      {coverImageId === image.id ? '当前封面' : '设为封面'}
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -237,6 +295,12 @@ export function AdminCatFormPage() {
           <button className="action-btn" disabled={mutation.isPending} type="submit">{mutation.isPending ? '保存中...' : '保存档案'}</button>
         </div>
       </form>
+      <CatImageLightbox
+        activeIndex={previewIndex}
+        catName={form.name || '猫猫'}
+        images={currentImages}
+        onClose={() => setPreviewIndex(null)}
+      />
     </section>
   );
 }

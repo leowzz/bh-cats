@@ -1,5 +1,6 @@
 import shutil
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -19,16 +20,21 @@ class BannerService:
 
     def list_public_banners(self, db: Session) -> list[BannerResponse]:
         banners = db.scalars(
-            select(Banner).where(Banner.is_active.is_(True)).options(selectinload(Banner.images)).order_by(Banner.sort_order.asc(), Banner.id.desc())
+            select(Banner)
+            .where(Banner.is_active.is_(True), Banner.deleted_at.is_(None))
+            .options(selectinload(Banner.images))
+            .order_by(Banner.sort_order.asc(), Banner.id.desc())
         ).all()
         return [self._to_response(item) for item in banners]
 
     def list_admin_banners(self, db: Session) -> list[BannerResponse]:
-        banners = db.scalars(select(Banner).options(selectinload(Banner.images)).order_by(Banner.sort_order.asc(), Banner.id.desc())).all()
+        banners = db.scalars(
+            select(Banner).where(Banner.deleted_at.is_(None)).options(selectinload(Banner.images)).order_by(Banner.sort_order.asc(), Banner.id.desc())
+        ).all()
         return [self._to_response(item) for item in banners]
 
     def get_banner(self, db: Session, banner_id: int) -> BannerResponse | None:
-        banner = db.scalar(select(Banner).where(Banner.id == banner_id).options(selectinload(Banner.images)))
+        banner = db.scalar(select(Banner).where(Banner.id == banner_id, Banner.deleted_at.is_(None)).options(selectinload(Banner.images)))
         if not banner:
             return None
         return self._to_response(banner)
@@ -64,7 +70,7 @@ class BannerService:
         is_active: bool,
         files: Sequence[UploadFile] | None = None,
     ) -> BannerResponse | None:
-        banner = db.scalar(select(Banner).where(Banner.id == banner_id).options(selectinload(Banner.images)))
+        banner = db.scalar(select(Banner).where(Banner.id == banner_id, Banner.deleted_at.is_(None)).options(selectinload(Banner.images)))
         if not banner:
             return None
         banner.title = title
@@ -79,13 +85,10 @@ class BannerService:
         return self._to_response(banner)
 
     def delete_banner(self, db: Session, banner_id: int) -> bool:
-        banner = db.scalar(select(Banner).where(Banner.id == banner_id).options(selectinload(Banner.images)))
+        banner = db.scalar(select(Banner).where(Banner.id == banner_id, Banner.deleted_at.is_(None)).options(selectinload(Banner.images)))
         if not banner:
             return False
-        banner_dir = Path(get_settings().media_root) / 'banners' / str(banner.id)
-        if banner_dir.exists():
-            shutil.rmtree(banner_dir)
-        db.delete(banner)
+        banner.deleted_at = datetime.now(UTC)
         db.commit()
         return True
 

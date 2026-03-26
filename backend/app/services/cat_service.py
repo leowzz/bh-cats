@@ -1,6 +1,6 @@
 import json
-import shutil
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -19,7 +19,7 @@ class CatService:
         self.media_service = MediaService(settings.media_root, settings.image_max_bytes)
 
     def list_public_cats(self, db: Session, campus: str | None = None, keyword: str | None = None, sort: str = 'hot') -> CatListResponse:
-        query: Select[tuple[Cat]] = select(Cat).where(Cat.status == 'visible').options(selectinload(Cat.images))
+        query: Select[tuple[Cat]] = select(Cat).where(Cat.status == 'visible', Cat.deleted_at.is_(None)).options(selectinload(Cat.images))
         if campus:
             query = query.where(Cat.campus == campus)
         if keyword:
@@ -33,11 +33,13 @@ class CatService:
         return CatListResponse(items=[self._to_response(cat) for cat in cats], total=len(cats))
 
     def list_admin_cats(self, db: Session) -> CatListResponse:
-        cats = list(db.scalars(select(Cat).options(selectinload(Cat.images)).order_by(Cat.created_at.desc())).unique())
+        cats = list(
+            db.scalars(select(Cat).where(Cat.deleted_at.is_(None)).options(selectinload(Cat.images)).order_by(Cat.created_at.desc())).unique()
+        )
         return CatListResponse(items=[self._to_response(cat) for cat in cats], total=len(cats))
 
     def get_public_cat(self, db: Session, cat_id: int) -> CatResponse | None:
-        cat = db.scalar(select(Cat).where(Cat.id == cat_id, Cat.status == 'visible').options(selectinload(Cat.images)))
+        cat = db.scalar(select(Cat).where(Cat.id == cat_id, Cat.status == 'visible', Cat.deleted_at.is_(None)).options(selectinload(Cat.images)))
         if not cat:
             return None
         cat.view_count += 1
@@ -46,7 +48,7 @@ class CatService:
         return self._to_response(cat)
 
     def get_admin_cat(self, db: Session, cat_id: int) -> CatResponse | None:
-        cat = db.scalar(select(Cat).where(Cat.id == cat_id).options(selectinload(Cat.images)))
+        cat = db.scalar(select(Cat).where(Cat.id == cat_id, Cat.deleted_at.is_(None)).options(selectinload(Cat.images)))
         if not cat:
             return None
         return self._to_response(cat)
@@ -97,9 +99,11 @@ class CatService:
         personality_tags: str,
         description: str,
         status: str,
+        remove_image_ids: Sequence[int] | None = None,
+        cover_image_id: int | None = None,
         files: Sequence[UploadFile] | None = None,
     ) -> CatResponse | None:
-        cat = db.scalar(select(Cat).where(Cat.id == cat_id).options(selectinload(Cat.images)))
+        cat = db.scalar(select(Cat).where(Cat.id == cat_id, Cat.deleted_at.is_(None)).options(selectinload(Cat.images)))
         if not cat:
             return None
         cat.name = name
@@ -111,47 +115,101 @@ class CatService:
         cat.personality_tags = personality_tags
         cat.description = description
         cat.status = status
+        self._sync_images(
+            db,
+            cat,
+            files=files or [],
+            remove_image_ids=remove_image_ids or [],
+            cover_image_id=cover_image_id,
+        )
+        db.add(cat)
         db.commit()
-        if files:
-            self._replace_files(db, cat, files)
         db.refresh(cat)
         return self._to_response(cat)
 
     def delete_cat(self, db: Session, cat_id: int) -> bool:
-        cat = db.scalar(select(Cat).where(Cat.id == cat_id).options(selectinload(Cat.images)))
+        cat = db.scalar(select(Cat).where(Cat.id == cat_id, Cat.deleted_at.is_(None)).options(selectinload(Cat.images)))
         if not cat:
             return False
-        cat_dir = Path(get_settings().media_root) / 'cats' / str(cat.id)
-        if cat_dir.exists():
-            shutil.rmtree(cat_dir)
-        db.delete(cat)
+        cat.deleted_at = datetime.now(UTC)
         db.commit()
         return True
 
+    def serialize_images(self, images: Sequence[CatImage]) -> list[dict]:
+        return [CatImageResponse.model_validate(image).model_dump(mode='json') for image in self._ordered_images(images)]
+
     def _attach_files(self, db: Session, cat: Cat, files: Sequence[UploadFile]) -> None:
-        for idx, upload in enumerate(files):
-            saved = self.media_service.process_upload(upload.file.read(), owner_type='cats', owner_id=cat.id)
-            db.add(
-                CatImage(
-                    cat_id=cat.id,
-                    file_path=saved.file_path,
-                    thumb_path=saved.thumb_path,
-                    sort_order=idx,
-                    is_cover=idx == 0,
-                    width=saved.width,
-                    height=saved.height,
-                )
-            )
+        self._append_files(db, cat, files)
+        self._normalize_cover(cat)
         db.commit()
 
-    def _replace_files(self, db: Session, cat: Cat, files: Sequence[UploadFile]) -> None:
-        cat_dir = Path(get_settings().media_root) / 'cats' / str(cat.id)
-        if cat_dir.exists():
-            shutil.rmtree(cat_dir)
+    def _sync_images(
+        self,
+        db: Session,
+        cat: Cat,
+        *,
+        files: Sequence[UploadFile],
+        remove_image_ids: Sequence[int],
+        cover_image_id: int | None,
+    ) -> None:
+        self._remove_images(db, cat, remove_image_ids)
+        self._append_files(db, cat, files)
+        self._normalize_cover(cat, preferred_cover_id=cover_image_id)
+
+    def _append_files(self, db: Session, cat: Cat, files: Sequence[UploadFile]) -> None:
+        next_sort = len(cat.images)
+        for upload in files:
+            saved = self.media_service.process_upload(upload.file.read(), owner_type='cats', owner_id=cat.id)
+            image = CatImage(
+                cat_id=cat.id,
+                file_path=saved.file_path,
+                thumb_path=saved.thumb_path,
+                sort_order=next_sort,
+                is_cover=False,
+                width=saved.width,
+                height=saved.height,
+            )
+            cat.images.append(image)
+            db.add(image)
+            next_sort += 1
+
+    def _remove_images(self, db: Session, cat: Cat, remove_image_ids: Sequence[int]) -> None:
+        if not remove_image_ids:
+            return
+        remove_set = set(remove_image_ids)
+        remaining_images: list[CatImage] = []
         for image in list(cat.images):
-            db.delete(image)
-        db.commit()
-        self._attach_files(db, cat, files)
+            if image.id in remove_set:
+                self._delete_media_file(image.file_path)
+                self._delete_media_file(image.thumb_path)
+                db.delete(image)
+                continue
+            remaining_images.append(image)
+        cat.images[:] = remaining_images
+
+    def _normalize_cover(self, cat: Cat, preferred_cover_id: int | None = None) -> None:
+        ordered_images = self._ordered_images(cat.images)
+        if not ordered_images:
+            return
+
+        cover_image = None
+        if preferred_cover_id is not None:
+            cover_image = next((image for image in ordered_images if image.id == preferred_cover_id), None)
+        if cover_image is None:
+            cover_image = next((image for image in ordered_images if image.is_cover), ordered_images[0])
+
+        reordered_images = [cover_image, *[image for image in ordered_images if image is not cover_image]]
+        for index, image in enumerate(reordered_images):
+            image.sort_order = index
+            image.is_cover = image is cover_image
+
+    def _ordered_images(self, images: Sequence[CatImage]) -> list[CatImage]:
+        return sorted(images, key=lambda image: (0 if image.is_cover else 1, image.sort_order, image.id or 0))
+
+    def _delete_media_file(self, relative_path: str) -> None:
+        file_path = Path(get_settings().media_root) / relative_path
+        if file_path.exists():
+            file_path.unlink()
 
     def _to_response(self, cat: Cat) -> CatResponse:
         tags = json.loads(cat.personality_tags or '[]')
@@ -170,7 +228,7 @@ class CatService:
             like_count=cat.like_count,
             created_at=cat.created_at,
             updated_at=cat.updated_at,
-            images=[CatImageResponse.model_validate(image) for image in cat.images],
+            images=[CatImageResponse.model_validate(image) for image in self._ordered_images(cat.images)],
         )
 
 

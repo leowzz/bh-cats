@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
-import { apiFetch } from '../../lib/api';
+import { apiFetch, mediaUrl } from '../../lib/api';
 
 type HomePayload = {
   stats: {
@@ -19,6 +19,10 @@ type HomePayload = {
     name: string;
     like_count: number;
     view_count: number;
+    images: Array<{
+      file_path: string;
+      thumb_path: string;
+    }>;
   }>;
 };
 
@@ -37,9 +41,9 @@ export function HomePage() {
     reason: '近期互动热度高，相关讨论活跃。'
   };
   const hotCats = data?.hot_cats ?? [
-    { id: 1, name: '奶油', like_count: 24, view_count: 180 },
-    { id: 2, name: '团子', like_count: 18, view_count: 120 },
-    { id: 3, name: '煤球', like_count: 12, view_count: 96 }
+    { id: 1, name: '奶油', like_count: 24, view_count: 180, images: [] },
+    { id: 2, name: '团子', like_count: 18, view_count: 120, images: [] },
+    { id: 3, name: '煤球', like_count: 12, view_count: 96, images: [] }
   ];
 
   return (
@@ -108,10 +112,21 @@ export function HomePage() {
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {hotCats.map((cat) => (
-            <Link key={cat.id} className="rounded-[24px] border border-ink-900/10 bg-white p-5 transition hover:-translate-y-1" to={`/cats/${cat.id}`}>
-              <p className="text-sm text-moss-700">点赞 {cat.like_count}</p>
-              <h4 className="mt-2 font-display text-3xl">{cat.name}</h4>
-              <p className="mt-3 text-sm text-ink-700">浏览量 {cat.view_count}</p>
+            <Link key={cat.id} className="overflow-hidden rounded-[24px] border border-ink-900/10 bg-white transition hover:-translate-y-1" to={`/cats/${cat.id}`}>
+              {cat.images[0] ? (
+                <img
+                  alt={cat.name + '封面'}
+                  className="h-44 w-full object-cover"
+                  src={mediaUrl(cat.images[0].thumb_path || cat.images[0].file_path)}
+                />
+              ) : (
+                <div className="h-44 bg-gradient-to-br from-ember-300/60 via-cream-100 to-moss-400/30" />
+              )}
+              <div className="p-5">
+                <p className="text-sm text-moss-700">点赞 {cat.like_count}</p>
+                <h4 className="mt-2 font-display text-3xl">{cat.name}</h4>
+                <p className="mt-3 text-sm text-ink-700">浏览量 {cat.view_count}</p>
+              </div>
             </Link>
           ))}
         </div>

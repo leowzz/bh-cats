@@ -22,7 +22,10 @@ class LikeService:
         if not user and not device_id:
             raise ValueError('游客点赞需要 device_id')
         model = TARGET_MODELS[target_type]
-        target = db.scalar(select(model).where(model.id == target_id))
+        query_target = select(model).where(model.id == target_id)
+        if hasattr(model, 'deleted_at'):
+            query_target = query_target.where(model.deleted_at.is_(None))
+        target = db.scalar(query_target)
         if not target:
             raise LookupError('目标不存在')
 

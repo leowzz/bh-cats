@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 import shutil
 
@@ -21,12 +22,15 @@ class PostService:
 
     def list_posts(self, db: Session) -> PostListResponse:
         posts = db.scalars(
-            select(Post).where(Post.status == 'visible').options(joinedload(Post.author), selectinload(Post.images)).order_by(Post.created_at.desc())
+            select(Post)
+            .where(Post.status == 'visible', Post.deleted_at.is_(None))
+            .options(joinedload(Post.author), selectinload(Post.images))
+            .order_by(Post.created_at.desc())
         ).unique().all()
         return PostListResponse(items=[self._to_response(db, post) for post in posts], total=len(posts))
 
     def get_post(self, db: Session, post_id: int) -> PostResponse | None:
-        post = db.scalar(select(Post).where(Post.id == post_id).options(joinedload(Post.author), selectinload(Post.images)))
+        post = db.scalar(select(Post).where(Post.id == post_id, Post.deleted_at.is_(None)).options(joinedload(Post.author), selectinload(Post.images)))
         if not post or post.status != 'visible':
             return None
         return self._to_response(db, post, include_comments=True)
@@ -40,7 +44,7 @@ class PostService:
         return self._to_response(db, post)
 
     def update_post(self, db: Session, post_id: int, author: User, title: str, content: str, related_cat_id: int | None, files: Sequence[UploadFile] | None) -> PostResponse | None:
-        post = db.scalar(select(Post).where(Post.id == post_id).options(joinedload(Post.author), selectinload(Post.images)))
+        post = db.scalar(select(Post).where(Post.id == post_id, Post.deleted_at.is_(None)).options(joinedload(Post.author), selectinload(Post.images)))
         if not post:
             return None
         if post.author_id != author.id:
@@ -55,15 +59,12 @@ class PostService:
         return self._to_response(db, post)
 
     def delete_post(self, db: Session, post_id: int, author: User) -> bool:
-        post = db.scalar(select(Post).where(Post.id == post_id).options(selectinload(Post.images)))
+        post = db.scalar(select(Post).where(Post.id == post_id, Post.deleted_at.is_(None)).options(selectinload(Post.images)))
         if not post:
             return False
         if post.author_id != author.id:
             raise PermissionError('只能删除自己的帖子')
-        post_dir = Path(get_settings().media_root) / 'posts' / str(post.id)
-        if post_dir.exists():
-            shutil.rmtree(post_dir)
-        db.delete(post)
+        post.deleted_at = datetime.now(UTC)
         db.commit()
         return True
 
@@ -111,7 +112,7 @@ class PostService:
 
     def _build_comment_tree(self, db: Session, post_id: int) -> list[CommentResponse]:
         comments = db.scalars(
-            select(Comment).where(Comment.post_id == post_id).options(joinedload(Comment.author)).order_by(Comment.created_at.asc())
+            select(Comment).where(Comment.post_id == post_id, Comment.deleted_at.is_(None)).options(joinedload(Comment.author)).order_by(Comment.created_at.asc())
         ).all()
         by_parent: dict[int | None, list[Comment]] = {}
         for comment in comments:
