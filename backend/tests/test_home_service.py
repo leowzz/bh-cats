@@ -5,7 +5,7 @@ from app.services.home_service import HomeService
 
 
 def test_pick_today_best_cat_prefers_more_engagement(db_session) -> None:
-    user = User(email='poster@test.local', password_hash='x', nickname='发帖人', role='user', is_active=True)
+    user = User(username='poster_test', email='poster@test.local', password_hash='x', nickname='发帖人', role='user', is_active=True)
     db_session.add(user)
     db_session.flush()
 

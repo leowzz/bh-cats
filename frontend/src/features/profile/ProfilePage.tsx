@@ -6,6 +6,7 @@ import { apiFetch } from '../../lib/api';
 
 type Profile = {
   id: number;
+  username: string;
   email: string;
   nickname: string;
   role: string;
@@ -37,6 +38,7 @@ export function ProfilePage() {
         <p className="text-sm uppercase tracking-[0.4em] text-moss-700">Profile</p>
         <h2 className="section-title mt-3">我的动态</h2>
         <p className="mt-3 text-sm leading-7 text-ink-700">昵称：{data?.nickname ?? '加载中...'}</p>
+        <p className="mt-2 text-sm leading-7 text-ink-700">用户名：{data?.username ?? '-'}</p>
         <p className="mt-2 text-sm leading-7 text-ink-700">邮箱：{data?.email ?? '-'}</p>
         <p className="mt-2 text-sm leading-7 text-ink-700">身份：{data?.role ?? role}</p>
       </div>

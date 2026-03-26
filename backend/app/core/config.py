@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     sqlite_path: Path = Path('storage/app.db')
     media_root: Path = Path('storage/uploads')
     media_url: str = '/media'
+    admin_username: str = 'admin'
     admin_email: str = 'admin@example.com'
     admin_password: str = 'Admin123!'
     admin_nickname: str = '管理员'

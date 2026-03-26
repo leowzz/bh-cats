@@ -17,6 +17,7 @@ from app.models.user import User
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv('SQLITE_PATH', str(tmp_path / 'test.db'))
     monkeypatch.setenv('MEDIA_ROOT', str(tmp_path / 'uploads'))
+    monkeypatch.setenv('ADMIN_USERNAME', 'test_admin')
     monkeypatch.setenv('ADMIN_EMAIL', 'admin@test.local')
     monkeypatch.setenv('ADMIN_PASSWORD', 'Admin123!')
     monkeypatch.setenv('ADMIN_NICKNAME', '测试管理员')
@@ -60,6 +61,7 @@ def sample_image_bytes() -> bytes:
 @pytest.fixture()
 def normal_user(db_session: Session) -> User:
     user = User(
+        username='user_test',
         email='user@test.local',
         password_hash=hash_password('Secret123!'),
         nickname='普通用户',
@@ -93,6 +95,7 @@ def admin_headers(admin_user: User) -> dict[str, str]:
 @pytest.fixture()
 def other_user(db_session: Session) -> User:
     user = User(
+        username='other_test',
         email='other@test.local',
         password_hash=hash_password('Secret123!'),
         nickname='其他用户',

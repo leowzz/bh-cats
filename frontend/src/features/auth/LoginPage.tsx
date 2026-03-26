@@ -17,11 +17,11 @@ export function LoginPage() {
   const { login } = useAuth();
   const [error, setError] = useState('');
   const mutation = useMutation({
-    mutationFn: async (payload: { email: FormDataEntryValue | null; password: FormDataEntryValue | null }) => {
+    mutationFn: async (payload: { account: FormDataEntryValue | null; password: FormDataEntryValue | null }) => {
       return apiFetch<LoginResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({
-          email: payload.email,
+          account: payload.account,
           password: payload.password
         })
       });
@@ -45,12 +45,12 @@ export function LoginPage() {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
           mutation.mutate({
-            email: formData.get('email'),
+            account: formData.get('account'),
             password: formData.get('password')
           });
         }}
       >
-        <input className="field" name="email" placeholder="邮箱" required type="email" />
+        <input className="field" name="account" placeholder="用户名或邮箱" required />
         <input className="field" name="password" placeholder="密码" required type="password" />
         {error ? <p className="text-sm text-brick-500">{error}</p> : null}
         <button className="action-btn" type="submit">{mutation.isPending ? '登录中...' : '登录'}</button>

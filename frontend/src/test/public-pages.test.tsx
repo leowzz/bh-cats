@@ -42,7 +42,57 @@ describe('Public pages', () => {
       </AppProviders>
     );
     expect(screen.getByText('注册账号')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('用户名')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建账号' })).toBeInTheDocument();
+  });
+
+  it('submits username during registration', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        id: 1,
+        username: 'mimi_cat',
+        email: 'user@example.com',
+        nickname: 'mimi',
+        role: 'user',
+        is_active: true,
+        created_at: '2026-03-26T00:00:00Z'
+      })
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AppProviders>
+        <MemoryRouter initialEntries={['/register']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AppProviders>
+    );
+
+    await user.type(screen.getByPlaceholderText('用户名'), 'mimi_cat');
+    await user.type(screen.getByPlaceholderText('昵称'), 'mimi');
+    await user.type(screen.getByPlaceholderText('邮箱'), 'user@example.com');
+    await user.type(screen.getByPlaceholderText('密码'), 'Secret123!');
+    fireEvent.submit(screen.getByRole('button', { name: '创建账号' }).closest('form')!);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/register',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'mimi_cat',
+          nickname: 'mimi',
+          email: 'user@example.com',
+          password: 'Secret123!'
+        })
+      })
+    );
   });
 
   it('submits the login form without hitting the FormData event bug', async () => {
@@ -65,7 +115,7 @@ describe('Public pages', () => {
       </AppProviders>
     );
 
-    await user.type(screen.getByPlaceholderText('邮箱'), 'leo03wq@163.com');
+    await user.type(screen.getByPlaceholderText('用户名或邮箱'), 'leo03wq@163.com');
     await user.type(screen.getByPlaceholderText('密码'), 'Secret123!');
     fireEvent.submit(screen.getByRole('button', { name: '登录' }).closest('form')!);
 
@@ -76,7 +126,11 @@ describe('Public pages', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/auth/login',
       expect.objectContaining({
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify({
+          account: 'leo03wq@163.com',
+          password: 'Secret123!'
+        })
       })
     );
   });

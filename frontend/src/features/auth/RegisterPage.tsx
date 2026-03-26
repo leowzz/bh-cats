@@ -9,6 +9,7 @@ export function RegisterPage() {
   const [error, setError] = useState('');
   const mutation = useMutation({
     mutationFn: async (payload: {
+      username: FormDataEntryValue | null;
       nickname: FormDataEntryValue | null;
       email: FormDataEntryValue | null;
       password: FormDataEntryValue | null;
@@ -16,6 +17,7 @@ export function RegisterPage() {
       return apiFetch('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
+          username: payload.username,
           nickname: payload.nickname,
           email: payload.email,
           password: payload.password
@@ -38,12 +40,14 @@ export function RegisterPage() {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
           mutation.mutate({
+            username: formData.get('username'),
             nickname: formData.get('nickname'),
             email: formData.get('email'),
             password: formData.get('password')
           });
         }}
       >
+        <input className="field" name="username" placeholder="用户名" required />
         <input className="field" name="nickname" placeholder="昵称" required />
         <input className="field" name="email" placeholder="邮箱" required type="email" />
         <input className="field" name="password" placeholder="密码" required type="password" />
