@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import DbSession, get_current_user
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.models.user import User
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.services.auth_service import auth_service
 
 router = APIRouter(prefix='/auth', tags=['auth'])
@@ -28,3 +29,11 @@ def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
 @router.get('/me', response_model=UserResponse)
 async def me(current_user=Depends(get_current_user)) -> UserResponse:
     return UserResponse.model_validate(current_user)
+
+
+@router.post('/change-password', status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(payload: ChangePasswordRequest, db: DbSession, current_user: User = Depends(get_current_user)) -> None:
+    try:
+        auth_service.change_password(db, current_user, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

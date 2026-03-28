@@ -1,8 +1,7 @@
 .venv/
 .env
 backend/.pytest_cache/
-backend/storage/app.db
-backend/storage/uploads/
+data/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/

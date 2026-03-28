@@ -1,7 +1,5 @@
-import shutil
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy import select
@@ -14,9 +12,8 @@ from app.services.media_service import MediaService
 
 
 class BannerService:
-    def __init__(self) -> None:
-        settings = get_settings()
-        self.media_service = MediaService(settings.media_root, settings.image_max_bytes)
+    def _media_service(self) -> MediaService:
+        return MediaService.from_settings(get_settings())
 
     def list_public_banners(self, db: Session) -> list[BannerResponse]:
         banners = db.scalars(
@@ -93,8 +90,9 @@ class BannerService:
         return True
 
     def _attach_files(self, db: Session, banner: Banner, files: Sequence[UploadFile]) -> None:
+        media_service = self._media_service()
         for idx, upload in enumerate(files):
-            saved = self.media_service.process_upload(upload.file.read(), owner_type='banners', owner_id=banner.id)
+            saved = media_service.process_upload(upload.file.read(), owner_type='banners', owner_id=banner.id)
             db.add(
                 BannerImage(
                     banner_id=banner.id,
@@ -108,10 +106,10 @@ class BannerService:
         db.commit()
 
     def _replace_files(self, db: Session, banner: Banner, files: Sequence[UploadFile]) -> None:
-        banner_dir = Path(get_settings().media_root) / 'banners' / str(banner.id)
-        if banner_dir.exists():
-            shutil.rmtree(banner_dir)
+        media_service = self._media_service()
         for image in list(banner.images):
+            media_service.delete(image.file_path)
+            media_service.delete(image.thumb_path)
             db.delete(image)
         db.commit()
         self._attach_files(db, banner, files)

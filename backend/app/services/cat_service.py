@@ -1,7 +1,6 @@
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy import Select, select
@@ -14,9 +13,8 @@ from app.services.media_service import MediaService
 
 
 class CatService:
-    def __init__(self) -> None:
-        settings = get_settings()
-        self.media_service = MediaService(settings.media_root, settings.image_max_bytes)
+    def _media_service(self) -> MediaService:
+        return MediaService.from_settings(get_settings())
 
     def list_public_cats(self, db: Session, campus: str | None = None, keyword: str | None = None, sort: str = 'hot') -> CatListResponse:
         query: Select[tuple[Cat]] = select(Cat).where(Cat.status == 'visible', Cat.deleted_at.is_(None)).options(selectinload(Cat.images))
@@ -158,8 +156,9 @@ class CatService:
 
     def _append_files(self, db: Session, cat: Cat, files: Sequence[UploadFile]) -> None:
         next_sort = len(cat.images)
+        media_service = self._media_service()
         for upload in files:
-            saved = self.media_service.process_upload(upload.file.read(), owner_type='cats', owner_id=cat.id)
+            saved = media_service.process_upload(upload.file.read(), owner_type='cats', owner_id=cat.id)
             image = CatImage(
                 cat_id=cat.id,
                 file_path=saved.file_path,
@@ -178,10 +177,11 @@ class CatService:
             return
         remove_set = set(remove_image_ids)
         remaining_images: list[CatImage] = []
+        media_service = self._media_service()
         for image in list(cat.images):
             if image.id in remove_set:
-                self._delete_media_file(image.file_path)
-                self._delete_media_file(image.thumb_path)
+                media_service.delete(image.file_path)
+                media_service.delete(image.thumb_path)
                 db.delete(image)
                 continue
             remaining_images.append(image)
@@ -205,11 +205,6 @@ class CatService:
 
     def _ordered_images(self, images: Sequence[CatImage]) -> list[CatImage]:
         return sorted(images, key=lambda image: (0 if image.is_cover else 1, image.sort_order, image.id or 0))
-
-    def _delete_media_file(self, relative_path: str) -> None:
-        file_path = Path(get_settings().media_root) / relative_path
-        if file_path.exists():
-            file_path.unlink()
 
     def _to_response(self, cat: Cat) -> CatResponse:
         tags = json.loads(cat.personality_tags or '[]')

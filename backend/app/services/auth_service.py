@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RegisterRequest
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, RegisterRequest
 
 
 class AuthService:
@@ -38,6 +38,15 @@ class AuthService:
             raise ValueError('用户名/邮箱或密码错误')
         token = create_access_token(str(user.id), extra_claims={'role': user.role})
         return token, user
+
+    def change_password(self, db: Session, user: User, payload: ChangePasswordRequest) -> None:
+        if not verify_password(payload.current_password, user.password_hash):
+            raise ValueError('当前密码错误')
+        if verify_password(payload.new_password, user.password_hash):
+            raise ValueError('新密码不能与当前密码相同')
+        user.password_hash = hash_password(payload.new_password)
+        db.add(user)
+        db.commit()
 
 
 auth_service = AuthService()

@@ -16,6 +16,7 @@ from app.models.user import User
 @pytest.fixture()
 def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv('SQLITE_PATH', str(tmp_path / 'test.db'))
+    monkeypatch.setenv('STORAGE_BACKEND', 'local')
     monkeypatch.setenv('MEDIA_ROOT', str(tmp_path / 'uploads'))
     monkeypatch.setenv('ADMIN_USERNAME', 'test_admin')
     monkeypatch.setenv('ADMIN_EMAIL', 'admin@test.local')

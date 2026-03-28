@@ -1,7 +1,5 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
-import shutil
 
 from fastapi import UploadFile
 from sqlalchemy import select
@@ -16,9 +14,8 @@ from app.services.media_service import MediaService
 
 
 class PostService:
-    def __init__(self) -> None:
-        settings = get_settings()
-        self.media_service = MediaService(settings.media_root, settings.image_max_bytes)
+    def _media_service(self) -> MediaService:
+        return MediaService.from_settings(get_settings())
 
     def list_posts(self, db: Session) -> PostListResponse:
         posts = db.scalars(
@@ -69,8 +66,9 @@ class PostService:
         return True
 
     def _attach_files(self, db: Session, post: Post, files: Sequence[UploadFile]) -> None:
+        media_service = self._media_service()
         for idx, upload in enumerate(files):
-            saved = self.media_service.process_upload(upload.file.read(), owner_type='posts', owner_id=post.id)
+            saved = media_service.process_upload(upload.file.read(), owner_type='posts', owner_id=post.id)
             db.add(
                 PostImage(
                     post_id=post.id,
@@ -85,10 +83,10 @@ class PostService:
         db.refresh(post)
 
     def _replace_files(self, db: Session, post: Post, files: Sequence[UploadFile]) -> None:
-        post_dir = Path(get_settings().media_root) / 'posts' / str(post.id)
-        if post_dir.exists():
-            shutil.rmtree(post_dir)
+        media_service = self._media_service()
         for image in list(post.images):
+            media_service.delete(image.file_path)
+            media_service.delete(image.thumb_path)
             db.delete(image)
         db.commit()
         self._attach_files(db, post, files)

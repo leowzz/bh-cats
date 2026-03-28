@@ -291,6 +291,60 @@ describe('Admin pages', () => {
     expect(screen.queryByText('猫档案管理')).not.toBeInTheDocument();
   });
 
+  it('shows a global error toast when upload request is rejected by nginx body size limit', async () => {
+    const user = userEvent.setup();
+    const currentCat = {
+      id: 3,
+      name: '奶油',
+      campus: 'east',
+      breed: '中华田园猫',
+      gender: 'female',
+      sterilized: true,
+      location: '图书馆附近',
+      personality_tags: ['亲人'],
+      description: '喜欢晒太阳',
+      status: 'visible',
+      view_count: 1,
+      like_count: 2,
+      created_at: '2026-03-26T00:00:00Z',
+      updated_at: '2026-03-26T00:00:00Z',
+      images: []
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.endsWith('/api/admin/cats/3') && method === 'GET') {
+        return mockResponse(currentCat);
+      }
+
+      if (url.endsWith('/api/admin/cats/3') && method === 'PUT') {
+        return mockResponse('<html><body><h1>413 Request Entity Too Large</h1></body></html>', 413);
+      }
+
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AppProviders authInitialState={{ role: 'admin', token: 'admin-token' }}>
+        <MemoryRouter initialEntries={['/admin/cats/3/edit']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AppProviders>
+    );
+
+    expect(await screen.findByDisplayValue('奶油')).toBeInTheDocument();
+
+    const file = new File(['large-image'], 'cat-large.png', { type: 'image/png' });
+    const fileInput = screen.getByLabelText('上传图片', { selector: 'input' });
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole('button', { name: '保存档案' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('上传内容过大，请将文件压缩到 20MB 以内后重试')).toBeInTheDocument();
+  });
+
   it('shows delete button for selected images and removes them immediately', async () => {
     const user = userEvent.setup();
     const currentCat = {

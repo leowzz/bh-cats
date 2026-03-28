@@ -272,4 +272,100 @@ describe('Public pages', () => {
       expect(screen.queryByRole('dialog', { name: '奶油图片预览' })).not.toBeInTheDocument();
     });
   });
+
+  it('lets a logged-in user change password from the profile page', async () => {
+    const user = userEvent.setup();
+    let changePasswordCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.endsWith('/api/auth/me') && method === 'GET') {
+        return mockResponse({
+          id: 1,
+          username: 'mimi_cat',
+          email: 'user@example.com',
+          nickname: 'mimi',
+          role: 'user'
+        });
+      }
+
+      if (url.endsWith('/api/auth/change-password') && method === 'POST') {
+        changePasswordCalls += 1;
+        expect(init?.body).toBe(
+          JSON.stringify({
+            current_password: 'Secret123!',
+            new_password: 'BrandNew123!'
+          })
+        );
+        return mockResponse(undefined, 204);
+      }
+
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AppProviders authInitialState={{ role: 'user', token: 'user-token' }}>
+        <MemoryRouter initialEntries={['/profile']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AppProviders>
+    );
+
+    expect(await screen.findByText('用户名：mimi_cat')).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText('当前密码'), 'Secret123!');
+    await user.type(screen.getByPlaceholderText('新密码'), 'BrandNew123!');
+    await user.type(screen.getByPlaceholderText('确认新密码'), 'BrandNew123!');
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
+
+    await waitFor(() => {
+      expect(changePasswordCalls).toBe(1);
+    });
+    expect(screen.getByText('密码修改成功，请使用新密码重新登录。')).toBeInTheDocument();
+  });
+
+  it('blocks password change when the confirmation password does not match', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.endsWith('/api/auth/me') && method === 'GET') {
+        return mockResponse({
+          id: 1,
+          username: 'mimi_cat',
+          email: 'user@example.com',
+          nickname: 'mimi',
+          role: 'user'
+        });
+      }
+
+      if (url.endsWith('/api/auth/change-password')) {
+        throw new Error('change-password should not be called when confirmation mismatches');
+      }
+
+      throw new Error(`Unhandled request: ${method} ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <AppProviders authInitialState={{ role: 'user', token: 'user-token' }}>
+        <MemoryRouter initialEntries={['/profile']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AppProviders>
+    );
+
+    await screen.findByText('用户名：mimi_cat');
+
+    await user.type(screen.getByPlaceholderText('当前密码'), 'Secret123!');
+    await user.type(screen.getByPlaceholderText('新密码'), 'BrandNew123!');
+    await user.type(screen.getByPlaceholderText('确认新密码'), 'Mismatch123!');
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
+
+    expect(screen.getByText('两次输入的新密码不一致')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

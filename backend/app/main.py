@@ -49,7 +49,8 @@ def create_app() -> FastAPI:
     app.include_router(cats_router, prefix=settings.api_prefix)
     app.include_router(admin_cats_router, prefix=settings.api_prefix)
     app.include_router(home_router, prefix=settings.api_prefix)
-    app.mount(settings.media_url, StaticFiles(directory=settings.media_root), name='media')
+    if settings.storage_backend == 'local':
+        app.mount(settings.media_url, StaticFiles(directory=settings.media_root), name='media')
     return app
 
 

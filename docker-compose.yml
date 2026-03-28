@@ -1,25 +1,107 @@
 services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: bh-cats-rustfs
+    environment:
+      RUSTFS_VOLUMES: /data/rustfs{0...3}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: 'true'
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    healthcheck:
+      test: ['CMD', 'sh', '-c', 'curl -f http://localhost:9000/health && curl -f http://localhost:9001/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  rustfs-init:
+    image: amazon/aws-cli:2.27.46
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    restart: 'no'
+    environment:
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: http://rustfs:9000
+      S3_BUCKET: ${S3_BUCKET:-bh-cats-media}
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        until aws --endpoint-url "$$S3_ENDPOINT" s3api list-buckets >/dev/null 2>&1; do
+          sleep 2
+        done
+        aws --endpoint-url "$$S3_ENDPOINT" s3api head-bucket --bucket "$$S3_BUCKET" >/dev/null 2>&1 || \
+          aws --endpoint-url "$$S3_ENDPOINT" s3api create-bucket --bucket "$$S3_BUCKET"
+        aws --endpoint-url "$$S3_ENDPOINT" s3api put-bucket-policy --bucket "$$S3_BUCKET" --policy "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"PublicReadGetObject\",\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::$${S3_BUCKET}/*\"]}]}"
+
   backend:
     build:
       context: ./backend
+    image: registry.cn-heyuan.aliyuncs.com/leo03w/bh-cats-backend:latest
     container_name: bh-cats-backend
+    depends_on:
+      rustfs-init:
+        condition: service_completed_successfully
     environment:
       SECRET_KEY: change-me-in-production
       SQLITE_PATH: storage/app.db
+      STORAGE_BACKEND: s3
       MEDIA_ROOT: storage/uploads
+      S3_ENDPOINT: http://rustfs:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-bh-cats-media}
+      S3_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000/bh-cats-media}
       ADMIN_EMAIL: admin@example.com
       ADMIN_PASSWORD: Admin123!
       ADMIN_NICKNAME: 系统管理员
     volumes:
-      - ./backend/storage:/app/storage
+      - backend-storage:/app/storage
     ports:
       - '8000:8000'
 
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:-/media}
+        BACKEND_BASE_URL: ${BACKEND_BASE_URL:-http://backend:8000}
+    image: registry.cn-heyuan.aliyuncs.com/leo03w/bh-cats-frontend:latest
     container_name: bh-cats-frontend
     depends_on:
       - backend
     ports:
       - '3000:80'
+
+volumes:
+  rustfs-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/rustfs-data
+  rustfs-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/rustfs-logs
+  backend-storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/backend-storage
