@@ -6,10 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+RUN python -m pip config --user set global.index-url https://mirrors.bfsu.edu.cn/pypi/web/simple
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir . 
 
 COPY app ./app
-COPY storage ./storage
 
 EXPOSE 8000
 

@@ -13,8 +13,8 @@ services:
       - rustfs-data:/data
       - rustfs-logs:/logs
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - '30120:9000'
+      - '30121:9001'
     healthcheck:
       test: ['CMD', 'sh', '-c', 'curl -f http://localhost:9000/health && curl -f http://localhost:9001/health']
       interval: 30s
@@ -70,7 +70,7 @@ services:
     volumes:
       - backend-storage:/app/storage
     ports:
-      - '8000:8000'
+      - '30123:8000'
 
   frontend:
     build:
@@ -84,7 +84,7 @@ services:
     depends_on:
       - backend
     ports:
-      - '3000:80'
+      - '30122:80'
 
 volumes:
   rustfs-data:
